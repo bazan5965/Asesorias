@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Horario de Asesorías - Cálculo I y II</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fuente Inter -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 md:p-8">
+
+    <div id="app" class="max-w-6xl mx-auto">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl font-extrabold text-blue-800 mb-2">Agenda de Asesorías de Cálculo</h1>
+            <p class="text-lg text-gray-600">Reserva tu sesión de 1 hora para Cálculo I o Cálculo II.</p>
+        </header>
+
+        <!-- Mensajes de estado y error --> 
+        <div id="message-container" class="mb-6"></div>
+
+        <!-- Componente de selección de Grupo y Equipo -->
+        <div id="selection-panel" class="bg-white p-6 rounded-xl shadow-lg mb-8 border border-blue-200">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">1. Identifica tu Grupo y Equipo</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label for="group-select" class="block text-sm font-medium text-gray-700 mb-1">Grupo:</label>
+                    <select id="group-select" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150">
+                        <option value="">Seleccionar Grupo</option>
+                        <option value="Calculo I">Cálculo I</option>
+                        <option value="Calculo II">Cálculo II</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="team-select" class="block text-sm font-medium text-gray-700 mb-1">Equipo:</label>
+                    <select id="team-select" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150">
+                        <option value="">Seleccionar Equipo</option>
+                        <option value="1">Equipo 1</option>
+                        <option value="2">Equipo 2</option>
+                        <option value="3">Equipo 3</option>
+                        <option value="4">Equipo 4</option>
+                        <option value="5">Equipo 5</option>
+                        <option value="6">Equipo 6</option>
+                    </select>
+                </div>
+                <div class="md:col-span-1 flex items-end">
+                    <button id="show-schedule-btn" class="w-full p-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition duration-150 shadow-md" disabled>
+                        Ver Horario
+                    </button>
+                </div>
+            </div>
+            <p id="user-info" class="mt-4 text-center font-medium text-blue-600 hidden">
+                Tu ID de Usuario (para referencia): <span id="current-user-id" class="text-gray-500"></span>
+            </p>
+        </div>
+
+        <!-- Horario Semanal (Grid) -->
+        <div id="schedule-panel" class="hidden bg-white p-6 rounded-xl shadow-lg border border-blue-200">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">2. Selecciona un Horario Disponible</h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-3 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Hora</th>
+                            <th class="px-3 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Lunes</th>
+                            <th class="px-3 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Martes</th>
+                            <th class="px-3 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Miércoles</th>
+                            <th class="px-3 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Jueves</th>
+                            <th class="px-3 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Viernes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="schedule-body" class="bg-white divide-y divide-gray-200">
+                        <!-- Las celdas de horario se llenarán con JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+            <p class="mt-6 text-sm text-gray-500 text-center">
+                <span class="inline-block w-3 h-3 rounded-full bg-green-500 mr-2"></span>Disponible
+                <span class="inline-block w-3 h-3 rounded-full bg-red-500 ml-4 mr-2"></span>Ocupado
+                <span id="current-booking-status" class="ml-4 font-bold text-blue-600"></span>
+            </p>
+        </div>
+    </div>
+
+    <!-- Modales para mensajes -->
+    <div id="modal-backdrop" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full">
+            <h3 id="modal-title" class="text-xl font-bold mb-4 text-gray-800"></h3>
+            <p id="modal-text" class="mb-6 text-gray-600"></p>
+            <button id="modal-close-btn" class="w-full p-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition duration-150">Cerrar</button>
+        </div>
+    </div>
+
+    <!-- Carga de Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, onSnapshot, collection, query, where, getDocs, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Globales para Firebase
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db, auth;
+        let currentUserId = null;
+        let currentBookings = [];
+        let userHasBooking = false;
+        let selectedGroup = null;
+        let selectedTeam = null;
+
+        // --- Definición del Horario Maestro (Slots de 1 hora) ---
+        const MASTER_SCHEDULE = {
+            "Lunes": [
+                "9:30 - 10:30", "10:30 - 11:30", "11:30 - 12:30", "12:30 - 13:30",
+                "13:30 - 14:30", "14:30 - 15:30", "15:30 - 16:30"
+            ],
+            "Martes": [
+                "8:30 - 9:30", "9:30 - 10:30", "10:30 - 11:30",
+                "16:30 - 17:30"
+            ],
+            "Miércoles": [
+                "11:00 - 12:00",
+                "14:00 - 15:00", "15:00 - 16:00", "16:00 - 17:00"
+            ],
+            "Jueves": [
+                "9:00 - 10:00", "10:00 - 11:00", "11:00 - 12:00"
+            ],
+            "Viernes": [
+                "8:30 - 9:30"
+            ]
+        };
+        const DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"];
+        const TIMES = Array.from(new Set(Object.values(MASTER_SCHEDULE).flat())).sort(); // Obtiene todas las horas únicas y las ordena.
+
+        const BOOKINGS_COLLECTION = `artifacts/${appId}/public/data/tutoring_bookings`;
+
+        // --- Funciones de Utilidad y UI ---
+        const messageContainer = document.getElementById('message-container');
+        const modalBackdrop = document.getElementById('modal-backdrop');
+        const modalTitle = document.getElementById('modal-title');
+        const modalText = document.getElementById('modal-text');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
+
+        /** Muestra un mensaje modal al usuario */
+        function showModal(title, text) {
+            modalTitle.textContent = title;
+            modalText.textContent = text;
+            modalBackdrop.classList.remove('hidden');
+        }
+
+        modalCloseBtn.addEventListener('click', () => {
+            modalBackdrop.classList.add('hidden');
+        });
+
+        /** Muestra un mensaje temporal en el contenedor principal */
+        function showTempMessage(text, type = 'success') {
+            const classes = {
+                success: 'bg-green-100 border-green-400 text-green-700',
+                error: 'bg-red-100 border-red-400 text-red-700',
+                info: 'bg-blue-100 border-blue-400 text-blue-700'
+            };
+            messageContainer.innerHTML = `
+                <div class="p-4 border-l-4 rounded-lg font-medium ${classes[type]}">
+                    ${text}
+                </div>
+            `;
+            setTimeout(() => {
+                messageContainer.innerHTML = '';
+            }, 5000);
+        }
+
+        // --- Lógica de Reset Semanal ---
+
+        /** Comprueba si la fecha actual es Sábado o Domingo */
+        function isWeekendResetDay() {
+            const today = new Date();
+            const dayOfWeek = today.getDay(); // 0 = Domingo, 6 = Sábado
+            return dayOfWeek === 0 || dayOfWeek === 6;
+        }
+
+        /** Reinicia todas las reservas si es fin de semana */
+        async function checkAndRunWeeklyReset() {
+            if (!isWeekendResetDay()) {
+                return; // No es fin de semana, no se reinicia
+            }
+
+            try {
+                const q = query(collection(db, BOOKINGS_COLLECTION));
+                const snapshot = await getDocs(q);
+
+                if (snapshot.empty) {
+                    return; // No hay reservas, no se necesita resetear
+                }
+
+                showTempMessage("Detectado: Es fin de semana. Reiniciando la agenda para la próxima semana...", 'info');
+
+                const batch = writeBatch(db);
+                snapshot.docs.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+                await batch.commit();
+                showTempMessage("¡La agenda semanal se ha reiniciado correctamente!", 'success');
+                // Forzamos una actualización de la UI
+                updateScheduleUI(currentBookings = []);
+
+            } catch (error) {
+                console.error("Error al reiniciar la agenda:", error);
+                showTempMessage("Error al intentar reiniciar la agenda. Consulta la consola.", 'error');
+            }
+        }
+
+
+        // --- Lógica de la Interfaz de Usuario (UI) ---
+
+        /** Genera la tabla de horarios */
+        function generateScheduleGrid() {
+            const scheduleBody = document.getElementById('schedule-body');
+            scheduleBody.innerHTML = '';
+
+            // Mapeo de slots reservados para fácil consulta
+            const bookedSlots = currentBookings.reduce((acc, booking) => {
+                acc[`${booking.day}-${booking.time}`] = {
+                    group: booking.groupId,
+                    team: booking.teamId
+                };
+                return acc;
+            }, {});
+
+            // Crea las filas de la tabla
+            TIMES.forEach(timeSlot => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50';
+
+                // Celda de la Hora
+                let timeCell = `<td class="px-3 py-3 whitespace-nowrap text-sm font-semibold text-gray-900 bg-gray-100">${timeSlot}</td>`;
+                row.innerHTML += timeCell;
+
+                // Celdas de los Días (Lunes a Viernes)
+                DAYS.forEach(day => {
+                    const availableSlots = MASTER_SCHEDULE[day] || [];
+                    const isAvailableTime = availableSlots.includes(timeSlot);
+                    const slotKey = `${day}-${timeSlot}`;
+                    const bookingInfo = bookedSlots[slotKey];
+
+                    let cellHTML;
+                    let cellClass = 'px-3 py-3 whitespace-nowrap text-sm text-center';
+
+                    if (isWeekendResetDay()) {
+                        // Si es fin de semana (Día de Reset)
+                        cellHTML = `<span class="text-gray-500 font-medium">Reset</span>`;
+                        cellClass += ' bg-gray-200';
+                    } else if (bookingInfo) {
+                        // Slot Ocupado (Rojo)
+                        const isMyBooking = selectedGroup === bookingInfo.group && selectedTeam == bookingInfo.team; // Usar == para comparar string y number
+                        cellHTML = `<span class="font-bold text-red-700">${bookingInfo.group} (${bookingInfo.team})</span>`;
+                        cellClass += ` bg-red-200 border border-red-300 ${isMyBooking ? 'ring-4 ring-red-500' : ''}`;
+                    } else if (isAvailableTime) {
+                        // Slot Disponible (Verde)
+                        cellHTML = `<button data-day="${day}" data-time="${timeSlot}" class="book-btn w-full p-2 font-semibold text-green-700 bg-green-100 rounded-lg hover:bg-green-200 transition duration-150 shadow-sm disabled:bg-gray-100 disabled:text-gray-400">Reservar</button>`;
+                        cellClass += ' bg-green-50 hover:bg-green-100 cursor-pointer';
+                    } else {
+                        // Slot Fuera de Horario (Gris Oscuro)
+                        cellHTML = `<span class="text-gray-400">—</span>`;
+                        cellClass += ' bg-gray-200';
+                    }
+
+                    row.innerHTML += `<td class="${cellClass}">${cellHTML}</td>`;
+                });
+
+                scheduleBody.appendChild(row);
+            });
+
+            addBookingButtonListeners();
+            updateBookingStatusDisplay();
+        }
+
+        /** Actualiza el estado de la reserva del usuario actual */
+        function updateBookingStatusDisplay() {
+            const statusDisplay = document.getElementById('current-booking-status');
+            if (userHasBooking) {
+                const booking = currentBookings.find(b => selectedGroup === b.groupId && selectedTeam == b.teamId);
+                if (booking) {
+                    statusDisplay.textContent = `Tu reserva: ${booking.day} a las ${booking.time}.`;
+                    statusDisplay.classList.remove('text-blue-600');
+                    statusDisplay.classList.add('text-green-600');
+                }
+            } else {
+                statusDisplay.textContent = 'Aún no tienes una reserva semanal.';
+                statusDisplay.classList.add('text-blue-600');
+                statusDisplay.classList.remove('text-green-600');
+            }
+        }
+
+        /** Adjunta listeners a los botones de reserva */
+        function addBookingButtonListeners() {
+            document.querySelectorAll('.book-btn').forEach(button => {
+                const day = button.getAttribute('data-day');
+                const time = button.getAttribute('data-time');
+
+                if (userHasBooking) {
+                    button.disabled = true;
+                    button.textContent = "Ya Reservaste";
+                    button.classList.add('disabled:cursor-not-allowed');
+                } else {
+                    button.onclick = () => handleBooking(day, time);
+                }
+            });
+        }
+
+        /** Lógica de reserva al hacer clic */
+        async function handleBooking(day, time) {
+            if (userHasBooking) {
+                showModal("¡Ya tienes una reserva!", `El equipo ${selectedTeam} de ${selectedGroup} ya tiene una asesoría agendada para esta semana. Solo se permite una por equipo.`);
+                return;
+            }
+
+            const slotKey = `${day}-${time}`;
+            const isBooked = currentBookings.some(b => `${b.day}-${b.time}` === slotKey);
+
+            if (isBooked) {
+                showModal("Slot Ocupado", "Este horario acaba de ser reservado por otro equipo. Por favor, elige otro slot disponible.");
+                return;
+            }
+
+            if (!selectedGroup || !selectedTeam) {
+                showModal("Error de Selección", "Por favor, selecciona tu Grupo y Equipo antes de reservar.");
+                return;
+            }
+
+            try {
+                // Prepara la nueva reserva
+                const newBooking = {
+                    groupId: selectedGroup,
+                    teamId: parseInt(selectedTeam),
+                    day: day,
+                    time: time,
+                    timestamp: Date.now(),
+                    // Se añade el ID de usuario para que sea más fácil para el profesor rastrear quién reservó
+                    reservedByUserId: currentUserId
+                };
+
+                await addDoc(collection(db, BOOKINGS_COLLECTION), newBooking);
+                showTempMessage(`¡Reserva exitosa! Has agendado el ${day} a las ${time}.`, 'success');
+
+            } catch (error) {
+                console.error("Error al guardar la reserva:", error);
+                showModal("Error al Reservar", "Hubo un problema al intentar guardar tu reserva. Inténtalo de nuevo.");
+            }
+        }
+
+        /** Función principal para actualizar la UI con las reservas actuales */
+        function updateScheduleUI(bookings) {
+            currentBookings = bookings;
+
+            // 1. Verificar si el equipo y grupo actual ya tienen una reserva
+            userHasBooking = currentBookings.some(b =>
+                selectedGroup === b.groupId &&
+                selectedTeam == b.teamId
+            );
+
+            // 2. Generar y renderizar el grid
+            generateScheduleGrid();
+        }
+
+        // --- Event Listeners y Handlers de Formulario ---
+        const groupSelect = document.getElementById('group-select');
+        const teamSelect = document.getElementById('team-select');
+        const showScheduleBtn = document.getElementById('show-schedule-btn');
+        const schedulePanel = document.getElementById('schedule-panel');
+        const userInfoDisplay = document.getElementById('user-info');
+
+        function updateSelectionState() {
+            selectedGroup = groupSelect.value;
+            selectedTeam = teamSelect.value;
+            const isValid = selectedGroup && selectedTeam;
+            showScheduleBtn.disabled = !isValid;
+
+            if (schedulePanel.classList.contains('flex') || schedulePanel.classList.contains('block')) {
+                // Forzar la actualización si la selección cambia mientras el horario está visible
+                updateScheduleUI(currentBookings);
+            }
+        }
+
+        groupSelect.addEventListener('change', updateSelectionState);
+        teamSelect.addEventListener('change', updateSelectionState);
+
+        showScheduleBtn.addEventListener('click', () => {
+            if (selectedGroup && selectedTeam) {
+                userInfoDisplay.classList.remove('hidden');
+                document.getElementById('current-user-id').textContent = currentUserId;
+                schedulePanel.classList.remove('hidden');
+                schedulePanel.classList.add('block');
+                // Al hacer clic, aseguramos que la UI esté actualizada con la selección actual
+                updateScheduleUI(currentBookings);
+            } else {
+                showModal("Selección Requerida", "Por favor, selecciona tanto el Grupo como el Equipo.");
+            }
+        });
+
+        // --- Inicialización de Firebase y Autenticación ---
+
+        async function initializeFirebase() {
+            if (!firebaseConfig) {
+                showModal("Error de Configuración", "La configuración de Firebase no está disponible. No se puede iniciar la aplicación.");
+                console.error("Firebase config is missing.");
+                return;
+            }
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Autenticación: Prioriza el token, sino, usa anónimo
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        currentUserId = user.uid;
+                        // 1. Ejecutar el chequeo de reseteo semanal
+                        checkAndRunWeeklyReset();
+                        // 2. Iniciar el listener de reservas
+                        startBookingsListener();
+                    } else {
+                        // Fallback, aunque con el token custom o anónimo siempre debería haber un usuario.
+                        console.log("No user signed in.");
+                    }
+                });
+            } catch (error) {
+                console.error("Error al inicializar o autenticar con Firebase:", error);
+                showModal("Error Crítico", "No se pudo conectar a la base de datos de reservas.");
+            }
+        }
+
+        // --- Listener de Reservas en Tiempo Real ---
+
+        function startBookingsListener() {
+            const q = query(collection(db, BOOKINGS_COLLECTION));
+
+            onSnapshot(q, (snapshot) => {
+                const updatedBookings = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                // Solo actualizar la UI si ya se ha seleccionado un grupo/equipo o si es el reset inicial
+                if (selectedGroup && selectedTeam) {
+                    updateScheduleUI(updatedBookings);
+                } else {
+                    currentBookings = updatedBookings;
+                }
+                console.log(`Reservas actualizadas: ${updatedBookings.length} en total.`);
+            }, (error) => {
+                console.error("Error al escuchar reservas en tiempo real:", error);
+                showTempMessage("Error al cargar los datos de la agenda. Revisa tu conexión.", 'error');
+            });
+        }
+
+        // Iniciar la aplicación al cargar la ventana
+        window.onload = initializeFirebase;
+    </script>
+</body>
+</html>
