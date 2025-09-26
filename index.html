@@ -9,18 +9,19 @@
     <!-- Fuente Inter -->
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
-        body { font-family: 'Inter', sans-serif; } 
+        body { font-family: 'Inter', sans-serif; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen p-4 md:p-8">
 
     <div id="app" class="max-w-6xl mx-auto">
         <header class="text-center mb-10">
-            <h1 class="text-4xl font-extrabold text-blue-800 mb-2">Agenda de Asesorías de Cálculo</h1>
+            <h1 class="text-4xl font-extrabold text-blue-800 mb-2">Agenda de Asesorías de Cálculo </h1>
+            <p class="text-lg text-green-600 font-bold">La disponibilidad se actualiza en tiempo real para todos.</p>
             <p class="text-lg text-gray-600">Reserva tu sesión de 1 hora para Cálculo I o Cálculo II.</p>
         </header>
 
-        <!-- Mensajes de estado y error --> 
+        <!-- Mensajes de estado y error -->
         <div id="message-container" class="mb-6"></div>
 
         <!-- Componente de selección de Grupo y Equipo -->
@@ -53,9 +54,6 @@
                     </button>
                 </div>
             </div>
-            <p id="user-info" class="mt-4 text-center font-medium text-blue-600 hidden">
-                Tu ID de Usuario (para referencia): <span id="current-user-id" class="text-gray-500"></span>
-            </p>
         </div>
 
         <!-- Horario Semanal (Grid) -->
@@ -81,7 +79,7 @@
             <p class="mt-6 text-sm text-gray-500 text-center">
                 <span class="inline-block w-3 h-3 rounded-full bg-green-500 mr-2"></span>Disponible
                 <span class="inline-block w-3 h-3 rounded-full bg-red-500 ml-4 mr-2"></span>Ocupado
-                <span id="current-booking-status" class="ml-4 font-bold text-blue-600"></span>
+                <span class="ml-4 font-bold text-blue-600">Puedes reservar múltiples asesorías si el slot está libre.</span>
             </p>
         </div>
     </div>
@@ -99,7 +97,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, addDoc, onSnapshot, collection, query, where, getDocs, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, addDoc, onSnapshot, collection, query, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Globales para Firebase
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -107,11 +105,9 @@
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         let db, auth;
-        let currentUserId = null;
-        let currentBookings = [];
-        let userHasBooking = false;
         let selectedGroup = null;
         let selectedTeam = null;
+        let currentBookings = []; // Almacena todas las reservas activas
 
         // --- Definición del Horario Maestro (Slots de 1 hora) ---
         const MASTER_SCHEDULE = {
@@ -135,8 +131,9 @@
             ]
         };
         const DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"];
-        const TIMES = Array.from(new Set(Object.values(MASTER_SCHEDULE).flat())).sort(); // Obtiene todas las horas únicas y las ordena.
-
+        const TIMES = Array.from(new Set(Object.values(MASTER_SCHEDULE).flat())).sort();
+        
+        // Colección pública para las reservas (compartida por todos)
         const BOOKINGS_COLLECTION = `artifacts/${appId}/public/data/tutoring_bookings`;
 
         // --- Funciones de Utilidad y UI ---
@@ -183,18 +180,21 @@
             return dayOfWeek === 0 || dayOfWeek === 6;
         }
 
-        /** Reinicia todas las reservas si es fin de semana */
+        /** Reinicia todas las reservas si es fin de semana (solo si hay conexión a Firebase) */
         async function checkAndRunWeeklyReset() {
+            if (!db) return; // Asegurar que la DB esté inicializada
+
             if (!isWeekendResetDay()) {
                 return; // No es fin de semana, no se reinicia
             }
 
             try {
+                // Se utiliza una consulta simple para obtener todos los documentos
                 const q = query(collection(db, BOOKINGS_COLLECTION));
                 const snapshot = await getDocs(q);
 
                 if (snapshot.empty) {
-                    return; // No hay reservas, no se necesita resetear
+                    return; // No hay reservas
                 }
 
                 showTempMessage("Detectado: Es fin de semana. Reiniciando la agenda para la próxima semana...", 'info');
@@ -224,10 +224,14 @@
 
             // Mapeo de slots reservados para fácil consulta
             const bookedSlots = currentBookings.reduce((acc, booking) => {
-                acc[`${booking.day}-${booking.time}`] = {
-                    group: booking.groupId,
-                    team: booking.teamId
-                };
+                const slotKey = `${booking.day}-${booking.time}`;
+                // Si el slot ya está en el mapa, es doble reserva (no debería pasar)
+                if (!acc[slotKey]) {
+                    acc[slotKey] = {
+                        group: booking.groupId,
+                        team: booking.teamId
+                    };
+                }
                 return acc;
             }, {});
 
@@ -250,18 +254,17 @@
                     let cellHTML;
                     let cellClass = 'px-3 py-3 whitespace-nowrap text-sm text-center';
 
-                    if (isWeekendResetDay()) {
-                        // Si es fin de semana (Día de Reset)
-                        cellHTML = `<span class="text-gray-500 font-medium">Reset</span>`;
-                        cellClass += ' bg-gray-200';
+                    if (isWeekendResetDay() && bookingInfo) {
+                         // Si es fin de semana (Día de Reset), pero aún se ve una reserva
+                         cellHTML = `<span class="text-gray-500 font-medium">Reset...</span>`;
+                         cellClass += ' bg-gray-200';
                     } else if (bookingInfo) {
                         // Slot Ocupado (Rojo)
-                        const isMyBooking = selectedGroup === bookingInfo.group && selectedTeam == bookingInfo.team; // Usar == para comparar string y number
                         cellHTML = `<span class="font-bold text-red-700">${bookingInfo.group} (${bookingInfo.team})</span>`;
-                        cellClass += ` bg-red-200 border border-red-300 ${isMyBooking ? 'ring-4 ring-red-500' : ''}`;
+                        cellClass += ` bg-red-200 border border-red-300`;
                     } else if (isAvailableTime) {
                         // Slot Disponible (Verde)
-                        cellHTML = `<button data-day="${day}" data-time="${timeSlot}" class="book-btn w-full p-2 font-semibold text-green-700 bg-green-100 rounded-lg hover:bg-green-200 transition duration-150 shadow-sm disabled:bg-gray-100 disabled:text-gray-400">Reservar</button>`;
+                        cellHTML = `<button data-day="${day}" data-time="${timeSlot}" class="book-btn w-full p-2 font-semibold text-green-700 bg-green-100 rounded-lg hover:bg-green-200 transition duration-150 shadow-sm">Reservar</button>`;
                         cellClass += ' bg-green-50 hover:bg-green-100 cursor-pointer';
                     } else {
                         // Slot Fuera de Horario (Gris Oscuro)
@@ -276,24 +279,6 @@
             });
 
             addBookingButtonListeners();
-            updateBookingStatusDisplay();
-        }
-
-        /** Actualiza el estado de la reserva del usuario actual */
-        function updateBookingStatusDisplay() {
-            const statusDisplay = document.getElementById('current-booking-status');
-            if (userHasBooking) {
-                const booking = currentBookings.find(b => selectedGroup === b.groupId && selectedTeam == b.teamId);
-                if (booking) {
-                    statusDisplay.textContent = `Tu reserva: ${booking.day} a las ${booking.time}.`;
-                    statusDisplay.classList.remove('text-blue-600');
-                    statusDisplay.classList.add('text-green-600');
-                }
-            } else {
-                statusDisplay.textContent = 'Aún no tienes una reserva semanal.';
-                statusDisplay.classList.add('text-blue-600');
-                statusDisplay.classList.remove('text-green-600');
-            }
         }
 
         /** Adjunta listeners a los botones de reserva */
@@ -302,24 +287,15 @@
                 const day = button.getAttribute('data-day');
                 const time = button.getAttribute('data-time');
 
-                if (userHasBooking) {
-                    button.disabled = true;
-                    button.textContent = "Ya Reservaste";
-                    button.classList.add('disabled:cursor-not-allowed');
-                } else {
-                    button.onclick = () => handleBooking(day, time);
-                }
+                // Solo se verifica si el slot está libre (ya no se verifica por equipo)
+                button.onclick = () => handleBooking(day, time);
             });
         }
 
         /** Lógica de reserva al hacer clic */
         async function handleBooking(day, time) {
-            if (userHasBooking) {
-                showModal("¡Ya tienes una reserva!", `El equipo ${selectedTeam} de ${selectedGroup} ya tiene una asesoría agendada para esta semana. Solo se permite una por equipo.`);
-                return;
-            }
-
             const slotKey = `${day}-${time}`;
+            // Re-verificar la ocupación del slot justo antes de intentar reservar (para evitar traslape en tiempo real)
             const isBooked = currentBookings.some(b => `${b.day}-${b.time}` === slotKey);
 
             if (isBooked) {
@@ -340,8 +316,7 @@
                     day: day,
                     time: time,
                     timestamp: Date.now(),
-                    // Se añade el ID de usuario para que sea más fácil para el profesor rastrear quién reservó
-                    reservedByUserId: currentUserId
+                    // Eliminamos el campo reservedByUserId
                 };
 
                 await addDoc(collection(db, BOOKINGS_COLLECTION), newBooking);
@@ -356,14 +331,7 @@
         /** Función principal para actualizar la UI con las reservas actuales */
         function updateScheduleUI(bookings) {
             currentBookings = bookings;
-
-            // 1. Verificar si el equipo y grupo actual ya tienen una reserva
-            userHasBooking = currentBookings.some(b =>
-                selectedGroup === b.groupId &&
-                selectedTeam == b.teamId
-            );
-
-            // 2. Generar y renderizar el grid
+            // 1. Generar y renderizar el grid (la única restricción es el slot)
             generateScheduleGrid();
         }
 
@@ -372,7 +340,6 @@
         const teamSelect = document.getElementById('team-select');
         const showScheduleBtn = document.getElementById('show-schedule-btn');
         const schedulePanel = document.getElementById('schedule-panel');
-        const userInfoDisplay = document.getElementById('user-info');
 
         function updateSelectionState() {
             selectedGroup = groupSelect.value;
@@ -380,7 +347,7 @@
             const isValid = selectedGroup && selectedTeam;
             showScheduleBtn.disabled = !isValid;
 
-            if (schedulePanel.classList.contains('flex') || schedulePanel.classList.contains('block')) {
+            if (schedulePanel.classList.contains('block') && isValid) {
                 // Forzar la actualización si la selección cambia mientras el horario está visible
                 updateScheduleUI(currentBookings);
             }
@@ -391,8 +358,6 @@
 
         showScheduleBtn.addEventListener('click', () => {
             if (selectedGroup && selectedTeam) {
-                userInfoDisplay.classList.remove('hidden');
-                document.getElementById('current-user-id').textContent = currentUserId;
                 schedulePanel.classList.remove('hidden');
                 schedulePanel.classList.add('block');
                 // Al hacer clic, aseguramos que la UI esté actualizada con la selección actual
@@ -416,7 +381,9 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Autenticación: Prioriza el token, sino, usa anónimo
+                // Autenticación: Usamos el token custom si está disponible, sino, anónimo
+                // Esto es solo para satisfacer las reglas de seguridad de Canvas,
+                // pero no guardamos el UID en las reservas.
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
@@ -425,14 +392,12 @@
 
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
-                        currentUserId = user.uid;
                         // 1. Ejecutar el chequeo de reseteo semanal
                         checkAndRunWeeklyReset();
                         // 2. Iniciar el listener de reservas
                         startBookingsListener();
                     } else {
-                        // Fallback, aunque con el token custom o anónimo siempre debería haber un usuario.
-                        console.log("No user signed in.");
+                        console.log("No user signed in (should not happen with anonymous/custom token).");
                     }
                 });
             } catch (error) {
@@ -452,8 +417,8 @@
                     ...doc.data()
                 }));
 
-                // Solo actualizar la UI si ya se ha seleccionado un grupo/equipo o si es el reset inicial
-                if (selectedGroup && selectedTeam) {
+                // Siempre actualizamos la UI si está visible, para el estado en tiempo real
+                if (schedulePanel.classList.contains('block')) {
                     updateScheduleUI(updatedBookings);
                 } else {
                     currentBookings = updatedBookings;
