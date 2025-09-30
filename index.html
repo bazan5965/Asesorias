@@ -4,15 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Horario de Asesorías - Cálculo I y II</title>
-    <!-- Carga de Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Fuente Inter -->
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
         body { font-family: 'Inter', sans-serif; }
     </style>
-    <script src="firebase-config.js"></script>
-</head>
+    </head>
 <body class="bg-gray-50 min-h-screen p-4 md:p-8">
 
     <div id="app" class="max-w-6xl mx-auto">
@@ -22,10 +19,8 @@
             <p class="text-lg text-gray-600">Reserva tu sesión de 1 hora para Cálculo I o Cálculo II.</p>
         </header>
 
-        <!-- Mensajes de estado y error -->
         <div id="message-container" class="mb-6"></div>
 
-        <!-- Componente de selección de Grupo y Equipo -->
         <div id="selection-panel" class="bg-white p-6 rounded-xl shadow-lg mb-8 border border-blue-200">
             <h2 class="text-2xl font-semibold text-gray-800 mb-4">1. Identifica tu Grupo y Equipo</h2>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -57,7 +52,6 @@
             </div>
         </div>
 
-        <!-- Horario Semanal (Grid) -->
         <div id="schedule-panel" class="hidden bg-white p-6 rounded-xl shadow-lg border border-blue-200">
             <h2 class="text-2xl font-semibold text-gray-800 mb-4">2. Selecciona un Horario Disponible</h2>
             <div class="overflow-x-auto">
@@ -73,8 +67,7 @@
                         </tr>
                     </thead>
                     <tbody id="schedule-body" class="bg-white divide-y divide-gray-200">
-                        <!-- Las celdas de horario se llenarán con JavaScript -->
-                    </tbody>
+                        </tbody>
                 </table>
             </div>
             <p class="mt-6 text-sm text-gray-500 text-center">
@@ -85,7 +78,6 @@
         </div>
     </div>
 
-    <!-- Modales para mensajes -->
     <div id="modal-backdrop" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50">
         <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full">
             <h3 id="modal-title" class="text-xl font-bold mb-4 text-gray-800"></h3>
@@ -94,16 +86,28 @@
         </div>
     </div>
 
-    <!-- Carga de Firebase SDKs -->
+    <script>
+        window.__firebase_config = {
+            apiKey: "AIzaSyXXXX",
+            authDomain: "mi-proyecto.firebaseapp.com",
+            projectId: "mi-proyecto",
+            storageBucket: "mi-proyecto.appspot.com",
+            messagingSenderId: "1234567890",
+            appId: "1:1234567890:web:abcdefg"
+        };
+        // Si usas un token de autenticación personalizado, defínelo aquí:
+        // window.__initial_auth_token = "TU_TOKEN_AQUÍ"; 
+    </script>
+
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, addDoc, onSnapshot, collection, query, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Globales para Firebase
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // --- CORRECCIÓN CLAVE: Acceder a las variables globales de window ---
+        const firebaseConfig = window.__firebase_config || null;
+        const initialAuthToken = window.__initial_auth_token || null; 
 
         let db, auth;
         let selectedGroup = null;
@@ -186,6 +190,9 @@
         async function checkAndRunWeeklyReset() {
             if (!db) return; // Asegurar que la DB esté inicializada
 
+            // Para la prueba, siempre se ejecuta el reset si es Sábado o Domingo.
+            // En un entorno de producción, puedes agregar una marca de tiempo
+            // para evitar que se ejecute más de una vez por fin de semana.
             if (!isWeekendResetDay()) {
                 return; // No es fin de semana, no se reinicia
             }
@@ -257,9 +264,9 @@
                     let cellClass = 'px-3 py-3 whitespace-nowrap text-sm text-center';
 
                     if (isWeekendResetDay() && bookingInfo) {
-                         // Si es fin de semana (Día de Reset), pero aún se ve una reserva
-                         cellHTML = `<span class="text-gray-500 font-medium">Reset...</span>`;
-                         cellClass += ' bg-gray-200';
+                            // Si es fin de semana (Día de Reset), pero aún se ve una reserva
+                            cellHTML = `<span class="text-gray-500 font-medium">Reset...</span>`;
+                            cellClass += ' bg-gray-200';
                     } else if (bookingInfo) {
                         // Slot Ocupado (Rojo)
                         cellHTML = `<span class="font-bold text-red-700">${bookingInfo.group} (${bookingInfo.team})</span>`;
@@ -372,6 +379,7 @@
         // --- Inicialización de Firebase y Autenticación ---
 
         async function initializeFirebase() {
+            // NOTA: firebaseConfig ya es un objeto (o null) gracias a la corrección de arriba.
             if (!firebaseConfig) {
                 showModal("Error de Configuración", "La configuración de Firebase no está disponible. No se puede iniciar la aplicación.");
                 console.error("Firebase config is missing.");
@@ -384,8 +392,6 @@
                 auth = getAuth(app);
 
                 // Autenticación: Usamos el token custom si está disponible, sino, anónimo
-                // Esto es solo para satisfacer las reglas de seguridad de Canvas,
-                // pero no guardamos el UID en las reservas.
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
