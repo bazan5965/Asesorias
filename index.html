@@ -135,7 +135,8 @@
         const TIMES = Array.from(new Set(Object.values(MASTER_SCHEDULE).flat())).sort();
         
         // Colección pública para las reservas (compartida por todos)
-        const BOOKINGS_COLLECTION = `artifacts/${appId}/public/data/tutoring_bookings`;
+        const BOOKINGS_COLLECTION = "tutoring_bookings";
+
 
         // --- Funciones de Utilidad y UI ---
         const messageContainer = document.getElementById('message-container');
